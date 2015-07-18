@@ -110,6 +110,12 @@ export default DS.RESTSerializer.extend({
       // relationship.
       // The adapter findHasMany has been overridden to make use of this.
       if (hash[key] && 'hasMany' === relationship.kind) {
+
+        if(options.related) {
+          // Normalize related records
+          extractIdsForHasMany(hash, key);
+        }
+
         if (options.relation) {
           // hash[key] contains the response of Parse.com: eg {__type: Relation, className: MyParseClassName}
           extractIdsForHasMany(hash, key);
@@ -125,10 +131,7 @@ export default DS.RESTSerializer.extend({
         }
 
         if (options.array) {
-          if(hash[key].objects) {
-            // hash[key] contains the response of Parse.com: eg {__type: Relation, className: MyParseClassName}
-            extractIdsForHasMany(hash, key);
-          } else if (hash[key].length && hash[key]) {
+          if (hash[key].length && hash[key]) {
             hash[key].forEach(function(item, index, items) {
               items[index] = buildRelatedRecord(store, serializer, relationship.type, item);
             });
@@ -182,8 +185,12 @@ export default DS.RESTSerializer.extend({
   serializeHasMany: function(snapshot, json, relationship) {
     var key = relationship.key,
       hasMany = snapshot.hasMany(key),
-      options = relationship.options,
-      _this = this;
+      options = relationship.options;
+
+    // If this is a related relation do not sent any payload for this key
+    if(options.related) {
+      return;
+    }
 
     if (hasMany) {
       json[key] = {
@@ -201,10 +208,10 @@ export default DS.RESTSerializer.extend({
       hasMany.forEach(function(child) {
         json[key].objects.push({
           '__type': 'Pointer',
-          'className': _this.parseClassName(child.type.typeKey),
+          'className': this.parseClassName(child.type.typeKey),
           'objectId': child.id
         });
-      });
+      }, this);
 
       if (hasMany._deletedItems && hasMany._deletedItems.length) {
         if (options.relation) {
