@@ -33,68 +33,70 @@ export default DS.RESTSerializer.extend({
 
   primaryKey: 'objectId',
 
-  extractArray: function( store, primaryType, payload ) {
+  extractArray: function(store, primaryType, payload) {
     var namespacedPayload = {};
-    namespacedPayload[ Ember.String.pluralize( primaryType.typeKey ) ] = payload.results;
+    namespacedPayload[Ember.String.pluralize(primaryType.typeKey)] = payload.results;
 
-    return this._super( store, primaryType, namespacedPayload );
+    return this._super(store, primaryType, namespacedPayload);
   },
 
-  extractSingle: function( store, primaryType, payload, recordId ) {
+  extractSingle: function(store, primaryType, payload, recordId) {
     var namespacedPayload = {};
-    namespacedPayload[ primaryType.typeKey ] = payload; // this.normalize(primaryType, payload);
+    namespacedPayload[primaryType.typeKey] = payload; // this.normalize(primaryType, payload);
 
-    return this._super( store, primaryType, namespacedPayload, recordId );
+    return this._super(store, primaryType, namespacedPayload, recordId);
   },
 
-  typeForRoot: function( key ) {
-    return Ember.String.dasherize( Ember.String.singularize( key ) );
+  typeForRoot: function(key) {
+    return Ember.String.dasherize(Ember.String.singularize(key));
   },
 
   /**
-  * Because Parse only returns the updatedAt/createdAt values on updates
-  * we have to intercept it here to assure that the adapter knows which
-  * record ID we are dealing with (using the primaryKey).
-  */
-  extract: function( store, type, payload, id, requestType ) {
-    if( id !== null && ( 'updateRecord' === requestType || 'deleteRecord' === requestType ) ) {
-      payload[ this.get( 'primaryKey' ) ] = id;
+   * Because Parse only returns the updatedAt/createdAt values on updates
+   * we have to intercept it here to assure that the adapter knows which
+   * record ID we are dealing with (using the primaryKey).
+   */
+  extract: function(store, type, payload, id, requestType) {
+    if (id !== null && ('updateRecord' === requestType || 'deleteRecord' === requestType)) {
+      payload[this.get('primaryKey')] = id;
     }
 
-    return this._super( store, type, payload, id, requestType );
+    return this._super(store, type, payload, id, requestType);
   },
 
   /**
-  * Extracts count from the payload so that you can get the total number
-  * of records in Parse if you're using skip and limit.
-  */
-  extractMeta: function( store, type, payload ) {
-    if ( payload && payload.count ) {
-      store.setMetadataFor( type, { count: payload.count } );
+   * Extracts count from the payload so that you can get the total number
+   * of records in Parse if you're using skip and limit.
+   */
+  extractMeta: function(store, type, payload) {
+    if (payload && payload.count) {
+      store.setMetadataFor(type, {
+        count: payload.count
+      });
       delete payload.count;
     }
   },
 
   /**
-  * Special handling for the Date objects inside the properties of
-  * Parse responses.
-  */
-  normalizeAttributes: function( type, hash ) {
-    type.eachAttribute( function( key, meta ) {
-      if ( 'date' === meta.type && 'object' === Ember.typeOf( hash[key] ) && hash[key].iso ) {
+   * Special handling for the Date objects inside the properties of
+   * Parse responses.
+   */
+  normalizeAttributes: function(type, hash) {
+    type.eachAttribute(function(key, meta) {
+      if ('date' === meta.type && 'object' === Ember.typeOf(hash[key]) && hash[key].iso) {
         hash[key] = hash[key].iso; //new Date(hash[key].iso).toISOString();
       }
     });
 
-    this._super( type, hash );
+    this._super(type, hash);
   },
 
   /**
-  * Special handling of the Parse relation types. In certain
-  * conditions there is a secondary query to retrieve the "many"
-  * side of the "hasMany".
-  */
-  normalizeRelationships: function( type, hash ) {
+   * Special handling of the Parse relation types. In certain
+   * conditions there is a secondary query to retrieve the "many"
+   * side of the "hasMany".
+   */
+  normalizeRelationships: function(type, hash) {
     type.eachRelationship(function(key, relationship) {
       var store = this.get('store'),
         serializer = this;
@@ -111,7 +113,7 @@ export default DS.RESTSerializer.extend({
       // The adapter findHasMany has been overridden to make use of this.
       if (hash[key] && 'hasMany' === relationship.kind) {
 
-        if(options.related) {
+        if (options.related) {
           // Normalize related records
           extractIdsForHasMany(hash, key);
         }
@@ -142,43 +144,43 @@ export default DS.RESTSerializer.extend({
     }, this);
   },
 
-  serializeIntoHash: function( hash, type, snapshot, options ) {
-    Ember.merge( hash, this.serialize( snapshot, options ) );
-  },
-
-  serializeAttribute: function( snapshot, json, key, attribute ) {
-    // These are Parse reserved properties and we won't send them.
-    if ( 'createdAt' === key ||
-         'updatedAt' === key ||
-         'emailVerified' === key ||
-         'sessionToken' === key
-    ) {
-      delete json[key];
-
-    } else {
-      this._super( snapshot, json, key, attribute );
-    }
-  },
-
-  serializeBelongsTo: function( snapshot, json, relationship ) {
-    var key         = relationship.type.typeKey,
-        belongsToId = snapshot.belongsTo(relationship.key, { id: true });
-
-    if ( belongsToId ) {
-      json[key] = {
-        '__type'    : 'Pointer',
-        'className' : this.parseClassName(key),
-        'objectId'  : belongsToId
-      };
-    }
-  },
-
-  parseClassName: function( key ) {
-    if ( 'parseUser' === key) {
+  parseClassName: function(key) {
+    if ('parseUser' === key) {
       return '_User';
 
     } else {
-      return Ember.String.capitalize( Ember.String.camelize( key ) );
+      return Ember.String.capitalize(Ember.String.camelize(key));
+    }
+  },
+
+  serializeIntoHash: function(hash, type, snapshot, options) {
+    Ember.merge(hash, this.serialize(snapshot, options));
+  },
+
+  serializeAttribute: function(snapshot, json, key, attribute) {
+    // These are Parse reserved properties and we won't send them.
+    var keys = ['createdAt', 'updatedAt', 'emailVerified', 'sessionToken'];
+
+    if(keys.indexOf(key) < 0) {
+      this._super(snapshot, json, key, attribute);
+    } else {
+      delete json[key];
+    }
+  },
+
+  serializeBelongsTo: function(snapshot, json, relationship) {
+    var key = relationship.key,
+      typeKey = relationship.type.typeKey,
+      belongsToId = snapshot.belongsTo(relationship.key, {
+        id: true
+      });
+
+    if (belongsToId) {
+      json[key] = {
+        '__type': 'Pointer',
+        'className': this.parseClassName(typeKey),
+        'objectId': belongsToId
+      };
     }
   },
 
@@ -188,7 +190,7 @@ export default DS.RESTSerializer.extend({
       options = relationship.options;
 
     // If this is a related relation do not sent any payload for this key
-    if(options.related) {
+    if (options.related) {
       return;
     }
 

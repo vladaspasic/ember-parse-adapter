@@ -44,7 +44,6 @@ export default DS.RESTAdapter.extend({
    */
   createRecord: function(store, type, record) {
     var serializer = store.serializerFor(type.typeKey),
-      snapshot = record._createSnapshot(),
       data = {};
 
     serializer.serializeIntoHash(data, type, snapshot, {
@@ -52,10 +51,10 @@ export default DS.RESTAdapter.extend({
     });
 
     return this.ajax(this.buildURL(type.typeKey), 'POST', {
-        data: data
-      }).then(function(json) {
-        return Ember.merge(data, json);
-      });
+      data: data
+    }).then(function(json) {
+      return Ember.merge(data, json);
+    });
   },
 
   /**
@@ -64,10 +63,9 @@ export default DS.RESTAdapter.extend({
    * properties onto existing data so that the record maintains
    * latest data.
    */
-  updateRecord: function(store, type, record) {
+  updateRecord: function(store, type, snapshot) {
     var serializer = store.serializerFor(type.typeKey),
-      snapshot = record._createSnapshot(),
-      id = record.get('id'),
+      id = snapshot.id,
       sendDeletes = false,
       deleteds = {},
       data = {},
