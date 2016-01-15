@@ -181,7 +181,7 @@ export default DS.RESTAdapter.extend({
           '$relatedTo': {
             'object': {
               '__type': 'Pointer',
-              'className': this.parseClassName(record.typeKey),
+              'className': this.parseClassName(record.modelName),
               'objectId': Ember.get(record, 'id')
             },
             key: relatedInfo_.key
@@ -191,7 +191,7 @@ export default DS.RESTAdapter.extend({
 
     // the request is to the related type and not the type for the record.
     // the query is where there is a pointer to this record.
-    return this.ajax(this.buildURL(relatedInfo_.typeKey), "GET", {
+    return this.ajax(this.buildURL(relatedInfo_.modelName), "GET", {
       data: query
     });
   },
