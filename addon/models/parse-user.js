@@ -17,8 +17,8 @@ var ParseUser = DS.Model.extend({
 });
 
 ParseUser.reopenClass({
-  requestPasswordReset: function( email ) {
-    var adapter = this.get( 'store' ).adapterFor( this ),
+  requestPasswordReset: function( store, email ) {
+    var adapter = store.adapterFor( this ),
         data    = { email: email };
 
     return adapter.ajax( adapter.buildURL( 'requestPasswordReset' ), 'POST', { data:data } )['catch'] (

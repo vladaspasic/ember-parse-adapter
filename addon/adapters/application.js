@@ -1,18 +1,9 @@
 import Ember from 'ember';
 import DS from 'ember-data';
+import computed from 'ember-new-computed';
 
 export default DS.RESTAdapter.extend({
-
   defaultSerializer: '-parse',
-
-  init: function() {
-    this._super();
-
-    this.set('headers', {
-      'X-Parse-Application-Id': Ember.get(this, 'applicationId'),
-      'X-Parse-REST-API-Key': Ember.get(this, 'restApiId')
-    });
-  },
 
   host: 'https://api.parse.com',
 
@@ -20,6 +11,12 @@ export default DS.RESTAdapter.extend({
 
   classesPath: 'classes',
 
+  /**
+   * Resolves the Parse API path for a a certain request type.
+   * 
+   * @param  {String} type
+   * @return {String}
+   */
   pathForType: function(type) {
     if ('parseUser' === type) {
       return 'users';
@@ -42,15 +39,15 @@ export default DS.RESTAdapter.extend({
    * properties onto existing data so that the record maintains
    * latest data.
    */
-  createRecord: function(store, type, record) {
-    var serializer = store.serializerFor(type.typeKey),
+  createRecord: function(store, type, snapshot) {
+    var serializer = store.serializerFor(type.modelName),
       data = {};
 
     serializer.serializeIntoHash(data, type, snapshot, {
       includeId: true
     });
 
-    return this.ajax(this.buildURL(type.typeKey), 'POST', {
+    return this.ajax(this.buildURL(type.modelName), 'POST', {
       data: data
     }).then(function(json) {
       return Ember.merge(data, json);
@@ -64,7 +61,7 @@ export default DS.RESTAdapter.extend({
    * latest data.
    */
   updateRecord: function(store, type, snapshot) {
-    var serializer = store.serializerFor(type.typeKey),
+    var serializer = store.serializerFor(type.modelName),
       id = snapshot.id,
       sendDeletes = false,
       deleteds = {},
@@ -85,11 +82,11 @@ export default DS.RESTAdapter.extend({
 
     return new Ember.RSVP.Promise(function(resolve, reject) {
       if (sendDeletes) {
-        adapter.ajax(adapter.buildURL(type.typeKey, id), 'PUT', {
+        adapter.ajax(adapter.buildURL(type.modelName, id), 'PUT', {
           data: deleteds
         }).then(
           function() {
-            adapter.ajax(adapter.buildURL(type.typeKey, id), 'PUT', {
+            adapter.ajax(adapter.buildURL(type.modelName, id), 'PUT', {
               data: data
             }).then(
               function(updates) {
@@ -103,7 +100,7 @@ export default DS.RESTAdapter.extend({
           }, reject);
 
       } else {
-        adapter.ajax(adapter.buildURL(type.typeKey, id), 'PUT', {
+        adapter.ajax(adapter.buildURL(type.modelName, id), 'PUT', {
           data: data
         }).then(
           function(json) {
@@ -123,7 +120,7 @@ export default DS.RESTAdapter.extend({
 
     this.inlcudeRelationships(store, type, query);
 
-    return this.ajax(this.buildURL(type.typeKey, id, snapshot), 'GET', {
+    return this.ajax(this.buildURL(type.modelName, id, snapshot), 'GET', {
       data: query
     });
   },
@@ -137,7 +134,7 @@ export default DS.RESTAdapter.extend({
       query.since = sinceToken;
     }
 
-    return this.ajax(this.buildURL(type.typeKey), 'GET', {
+    return this.ajax(this.buildURL(type.modelName), 'GET', {
       data: query
     });
   },
@@ -157,7 +154,7 @@ export default DS.RESTAdapter.extend({
    *       }
    *     });
    */
-  findQuery: function(store, type, query) {
+  query: function(store, type, query) {
     if (this.sortQueryParams) {
       query = this.sortQueryParams(query);
     }
@@ -168,7 +165,7 @@ export default DS.RESTAdapter.extend({
       query.where = JSON.stringify(query.where);
     }
 
-    return this.ajax(this.buildURL(type.typeKey), 'GET', {
+    return this.ajax(this.buildURL(type.modelName), 'GET', {
       data: query
     });
   },
@@ -178,14 +175,14 @@ export default DS.RESTAdapter.extend({
    * objects.
    */
   findHasMany: function(store, record, relatedInfo) {
-    var relatedInfo_ = JSON.parse(relatedInfo),
-      query = {
+    const relatedInfo_ = JSON.parse(relatedInfo);
+    const query = {
         where: {
           '$relatedTo': {
             'object': {
               '__type': 'Pointer',
               'className': this.parseClassName(record.typeKey),
-              'objectId': record.get('id')
+              'objectId': Ember.get(record, 'id')
             },
             key: relatedInfo_.key
           }
@@ -220,12 +217,28 @@ export default DS.RESTAdapter.extend({
     }
   },
 
-  sessionToken: Ember.computed('headers.X-Parse-Session-Token', function(key, value) {
-    if (arguments.length < 2) {
-      return this.get('headers.X-Parse-Session-Token');
-    } else {
-      this.set('headers.X-Parse-Session-Token', value);
-      return value;
-    }
+  headers: computed({
+    get() {
+        const headers = this.getWithDefault('_headers', {});
+
+        return Ember.merge(headers, {
+          'X-Parse-Application-Id': Ember.get(this, 'applicationId'),
+          'X-Parse-REST-API-Key': Ember.get(this, 'restApiId')
+        });
+      },
+
+      set(key, value) {
+        this.set('_headers', value);
+      }
+  }),
+
+  sessionToken: computed('headers.X-Parse-Session-Token', {
+    get() {
+        return this.get('headers.X-Parse-Session-Token');
+      },
+
+      set(key, value) {
+        this.set('headers.X-Parse-Session-Token', value);
+      }
   })
 });

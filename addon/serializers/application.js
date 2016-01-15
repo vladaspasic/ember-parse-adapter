@@ -1,67 +1,64 @@
 import Ember from 'ember';
 import DS from 'ember-data';
 
-// Constructs the Related Record
-function buildRelatedRecord(store, serializer, type, item) {
-  if ('Pointer' === item.__type) {
-    return item.objectId;
-  } else {
-    item.id = item.objectId;
+export default DS.RESTSerializer.reopen({
 
-    delete item.__type;
-    delete item.className;
-    delete item.objectId;
-
-    item.type = type;
-    serializer.normalizeAttributes(type, item);
-    serializer.normalizeRelationships(type, item);
-    return store.push(type, item);
-  }
-}
-
-// Extract the related recors as an Array of ID's
-function extractIdsForHasMany(hash, key) {
-  var payload = hash[key] || {};
-  payload.objects = payload.objects || [];
-
-  hash[key] = payload.objects.map(function(obj) {
-    return obj.objectId;
-  });
-}
-
-export default DS.RESTSerializer.extend({
-
-  primaryKey: 'objectId',
-
-  extractArray: function(store, primaryType, payload) {
-    var namespacedPayload = {};
-    namespacedPayload[Ember.String.pluralize(primaryType.typeKey)] = payload.results;
-
-    return this._super(store, primaryType, namespacedPayload);
-  },
-
-  extractSingle: function(store, primaryType, payload, recordId) {
-    var namespacedPayload = {};
-    namespacedPayload[primaryType.typeKey] = payload; // this.normalize(primaryType, payload);
-
-    return this._super(store, primaryType, namespacedPayload, recordId);
-  },
-
+  /**
+   * Generate a type name from Parse Class name
+   *
+   * @method typeForRoot
+   * @param  {String} key
+   * @return {String}
+   */
   typeForRoot: function(key) {
     return Ember.String.dasherize(Ember.String.singularize(key));
   },
 
   /**
-   * Because Parse only returns the updatedAt/createdAt values on updates
-   * we have to intercept it here to assure that the adapter knows which
-   * record ID we are dealing with (using the primaryKey).
+   * Generate a Parse Class name from a model name
+   *
+   * @method parseClassName
+   * @param  {String} key
+   * @return {String}
    */
-  extract: function(store, type, payload, id, requestType) {
-    if (id !== null && ('updateRecord' === requestType || 'deleteRecord' === requestType)) {
-      payload[this.get('primaryKey')] = id;
+  parseClassName: function(key) {
+    if ('parseUser' === key) {
+      return '_User';
+
+    } else {
+      return Ember.String.capitalize(Ember.String.camelize(key));
+    }
+  },
+
+  _normalizeResponse(store, modelClass, payload, id, requestType, isSingle) {
+    let documentHash = {
+      data: null,
+      included: []
+    };
+
+    let meta = this.extractMeta(store, modelClass, payload);
+
+    if (meta) {
+      Ember.assert('The `meta` returned from `extractMeta` has to be an object, not "' +
+        Ember.typeOf(meta) + '".', Ember.typeOf(meta) === 'object');
+
+      documentHash.meta = meta;
     }
 
-    return this._super(store, type, payload, id, requestType);
+    let normalized;
+
+    if (isSingle) {
+      normalized = this._normalizePolymorphicRecord(store, payload, null, modelClass, this);
+    } else {
+      normalized = this._normalizeArray(store, modelClass.modelName, payload.results, null);
+    }
+
+    documentHash.data = normalized.data;
+    if (normalized.included) {
+      documentHash.included.push(...normalized.included);
+    }
+
+    return documentHash;
   },
 
   /**
@@ -78,78 +75,105 @@ export default DS.RESTSerializer.extend({
   },
 
   /**
-   * Special handling for the Date objects inside the properties of
-   * Parse responses.
-   */
-  normalizeAttributes: function(type, hash) {
-    type.eachAttribute(function(key, meta) {
-      if ('date' === meta.type && 'object' === Ember.typeOf(hash[key]) && hash[key].iso) {
-        hash[key] = hash[key].iso; //new Date(hash[key].iso).toISOString();
-      }
-    });
-
-    this._super(type, hash);
-  },
-
-  /**
    * Special handling of the Parse relation types. In certain
    * conditions there is a secondary query to retrieve the "many"
    * side of the "hasMany".
    */
-  normalizeRelationships: function(type, hash) {
-    type.eachRelationship(function(key, relationship) {
-      var store = this.get('store'),
-        serializer = this;
+  extractRelationships: function(type, hash) {
+    const relationships = {};
 
-      var options = relationship.options;
+    type.eachRelationship(function(key, relationshipMeta) {
+      let relationship = null;
+      let relationshipKey = this.keyForRelationship(key, relationshipMeta.kind, 'deserialize');
+      let options = relationshipMeta.options;
 
-      if (hash[key] && 'belongsTo' === relationship.kind) {
-        hash[key] = buildRelatedRecord(store, serializer, relationship.type, hash[key]);
-      }
+      if (hash.hasOwnProperty(relationshipKey)) {
+        let relationshipHash = hash[relationshipKey];
+        let data;
 
-      // If this is a Relation hasMany then we need to supply
-      // the links property so the adapter can async call the
-      // relationship.
-      // The adapter findHasMany has been overridden to make use of this.
-      if (hash[key] && 'hasMany' === relationship.kind) {
-
-        if (options.related) {
-          // Normalize related records
-          extractIdsForHasMany(hash, key);
-        }
-
-        if (options.relation) {
-          // hash[key] contains the response of Parse.com: eg {__type: Relation, className: MyParseClassName}
-          extractIdsForHasMany(hash, key);
-
-          if (!hash.links) {
-            hash.links = {};
+        if (relationshipMeta.kind === 'belongsTo') {
+          if (options.polymorphic) {
+            data = this.extractPolymorphicRelationship(relationshipMeta.type, relationshipHash, {
+              key, hash, relationshipMeta
+            });
+          } else {
+            data = this.extractRelationship(relationshipMeta.type, relationshipHash);
+          }
+        } else if (relationshipMeta.kind === 'hasMany') {
+          if (Ember.isNone(relationshipHash)) {
+            return;
           }
 
-          hash.links[key] = JSON.stringify({
-            typeKey: relationship.type.typeKey,
-            key: key
-          });
-        }
+          if (options.related || options.relation) {
 
-        if (options.array) {
-          if (hash[key].length && hash[key]) {
-            hash[key].forEach(function(item, index, items) {
-              items[index] = buildRelatedRecord(store, serializer, relationship.type, item);
+          }
+
+          if (options.relation) {
+            if (!hash.links) {
+              hash.links = {};
+            }
+
+            hash.links[key] = JSON.stringify({
+              modelName: relationshipMeta.type,
+              key: key
             });
           }
+
+          if (options.array && relationshipHash.length) {
+            data = new Array(relationshipHash.length);
+
+            for (let i = 0, l = relationshipHash.length; i < l; i++) {
+              const item = relationshipHash[i];
+              data[i] = this.extractRelationship(relationshipMeta.type, item);
+            }
+          }
         }
+
+        if(data) {
+          relationship = { data };
+        }
+
+        const linkKey = this.keyForLink(key, relationshipMeta.kind);
+
+        if (hash.links && hash.links.hasOwnProperty(linkKey)) {
+          const related = hash.links[linkKey];
+          relationship = relationship || {};
+          relationship.links = {
+            related
+          };
+        }
+      }
+
+      if (relationship) {
+        relationships[key] = relationship;
       }
 
     }, this);
+
+    return relationships;
   },
 
-  parseClassName: function(key) {
-    if ('parseUser' === key) {
-      return '_User';
+  extractRelationship(relationshipModelName, relationshipHash) {
+    if (Ember.isNone(relationshipHash)) {
+      return null;
+    }
 
+    const store = this.get('store');
+    const modelClass = store.modelFor(relationshipModelName);
+
+    if ('Pointer' === relationshipHash.__type) {
+      return {
+        id: relationshipHash.objectId,
+        type: relationshipModelName
+      };
     } else {
-      return Ember.String.capitalize(Ember.String.camelize(key));
+      const data = this.normalize(modelClass, relationshipHash);
+      const model = store.push(data);
+
+      return {
+        id: model.id,
+        type: relationshipModelName
+      };
     }
   },
 
@@ -161,7 +185,7 @@ export default DS.RESTSerializer.extend({
     // These are Parse reserved properties and we won't send them.
     var keys = ['createdAt', 'updatedAt', 'emailVerified', 'sessionToken'];
 
-    if(keys.indexOf(key) < 0) {
+    if (keys.indexOf(key) < 0) {
       this._super(snapshot, json, key, attribute);
     } else {
       delete json[key];
@@ -170,7 +194,7 @@ export default DS.RESTSerializer.extend({
 
   serializeBelongsTo: function(snapshot, json, relationship) {
     var key = relationship.key,
-      typeKey = relationship.type.typeKey,
+      modelName = relationship.type.modelName,
       belongsToId = snapshot.belongsTo(relationship.key, {
         id: true
       });
@@ -178,7 +202,7 @@ export default DS.RESTSerializer.extend({
     if (belongsToId) {
       json[key] = {
         '__type': 'Pointer',
-        'className': this.parseClassName(typeKey),
+        'className': this.parseClassName(modelName),
         'objectId': belongsToId
       };
     }
@@ -210,7 +234,7 @@ export default DS.RESTSerializer.extend({
       hasMany.forEach(function(child) {
         json[key].objects.push({
           '__type': 'Pointer',
-          'className': this.parseClassName(child.type.typeKey),
+          'className': this.parseClassName(child.type.modelName),
           'objectId': child.id
         });
       }, this);

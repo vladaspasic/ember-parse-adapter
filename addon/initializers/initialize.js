@@ -9,16 +9,24 @@ import ParseUser from '../models/parse-user';
 @module initializers
 @class  initialize
 */
-export default function( container, app ) {
+export default function() {
+  let application;
+
+  if (arguments.length > 1) {
+    application = arguments[1];
+  } else {
+    application = arguments[0];
+  }
+
   Adapter.reopen({
-    applicationId : app.get( 'applicationId' ),
-    restApiId     : app.get( 'restApiId' )
+    applicationId: application.get('applicationId'),
+    restApiId: application.get('restApiId')
   });
 
-  container.register( 'adapter:-parse', Adapter );
-  container.register( 'serializer:-parse', Serializer );
-  container.register( 'transform:parse-date', DateTransform );
-  container.register( 'transform:parse-file', FileTransform );
-  container.register( 'transform:parse-geo-point', GeopointTransform );
-  container.register( 'model:parse-user', ParseUser );
+  application.register('adapter:-parse', Adapter);
+  application.register('serializer:-parse', Serializer);
+  application.register('transform:parse-date', DateTransform);
+  application.register('transform:parse-file', FileTransform);
+  application.register('transform:parse-geo-point', GeopointTransform);
+  application.register('model:parse-user', ParseUser);
 }
